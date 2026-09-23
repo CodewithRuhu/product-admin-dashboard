@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { Suspense, useEffect, useState, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { getProducts, getProductsByCategory, searchProducts, deleteProduct } from "@/lib/api/products";
@@ -15,14 +15,13 @@ import ProductTable from "@/components/ProductTable";
 import ProductCard from "@/components/ProductCard";
 import Link from "next/link";
 
-export default function ProductsPage() {
+function ProductsContent() {
   const { logout } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  // ----- URL se current values padhna (safe defaults ke saath) -----
   const rawPage = parseInt(searchParams.get("page")) || 1;
-  const page = Math.max(1, rawPage); // "?page=abc" ya negative -> 1
+  const page = Math.max(1, rawPage);
   const limit = [10, 20, 50].includes(Number(searchParams.get("limit")))
     ? Number(searchParams.get("limit"))
     : 10;
@@ -38,8 +37,6 @@ export default function ProductsPage() {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
 
-  // ----- URL update karne ka helper -----
-  // updates: object jo change karna hai, jaise { page: 2 }
   function updateParams(updates) {
     const params = new URLSearchParams(searchParams.toString());
     Object.entries(updates).forEach(([key, value]) => {
@@ -52,7 +49,6 @@ export default function ProductsPage() {
     router.push(`/products?${params.toString()}`);
   }
 
-  // ----- Data fetch karna -----
   const fetchData = useCallback(
     async (signal) => {
       setLoading(true);
@@ -61,10 +57,6 @@ export default function ProductsPage() {
         const skip = (page - 1) * limit;
         let data;
 
-        // IMPORTANT DECISION: API search aur category filter ek saath
-        // support nahi karti. Hum decide karte hain: agar search query
-        // hai, to search priority lega (category ignore hogi jab tak
-        // search khaali na ho). Ye README mein bhi explain kiya jayega.
         if (query) {
           data = await searchProducts({ q: query, limit, skip, signal });
         } else if (category) {
@@ -76,7 +68,6 @@ export default function ProductsPage() {
         setProducts(data.products || []);
         setTotal(data.total || 0);
       } catch (err) {
-        // Agar request cancel hui thi (race condition fix), to error mat dikhao
         if (err.code === "ERR_CANCELED" || err.name === "CanceledError") return;
         setError(err.message || "Failed to load products.");
       } finally {
@@ -86,18 +77,12 @@ export default function ProductsPage() {
     [page, limit, query, category, sortBy, order]
   );
 
-  // ----- Jab bhi URL params change hon, naya data fetch karo -----
   useEffect(() => {
     const controller = new AbortController();
     fetchData(controller.signal);
-
-    // CLEANUP: agar dependencies phir se change ho jayein (naya effect
-    // chalne se pehle), purani request cancel kar do. Ye "fast typing"
-    // wala race condition bug isi se fix hota hai.
     return () => controller.abort();
   }, [fetchData]);
 
-  // ----- "Wrong page number" (jaise ?page=999) handle karna -----
   const totalPages = Math.max(1, Math.ceil(total / limit));
   useEffect(() => {
     if (!loading && page > totalPages && total > 0) {
@@ -106,14 +91,11 @@ export default function ProductsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, totalPages, total]);
 
-  // ----- Event handlers -----
   function handleSearch(text) {
-    updateParams({ q: text, page: 1 }); // search change -> page 1 pe wapas
+    updateParams({ q: text, page: 1 });
   }
 
   function handleCategoryChange(cat) {
-    // Rule: category select karne par search clear kar do (kyunki API
-    // dono ek saath support nahi karti)
     updateParams({ category: cat, q: "", page: 1 });
   }
 
@@ -135,8 +117,6 @@ export default function ProductsPage() {
     setDeleting(true);
     try {
       await deleteProduct(deleteTarget.id);
-      // API asal mein delete nahi karti, isliye hum UI se manually hata
-      // dete hain taaki user ko change dikhe (README mein explain hoga)
       setProducts((prev) => prev.filter((p) => p.id !== deleteTarget.id));
       setTotal((prev) => prev - 1);
       setDeleteTarget(null);
@@ -188,7 +168,6 @@ export default function ProductsPage() {
 
       {!loading && !error && products.length > 0 && (
         <>
-          {/* Desktop: table. Mobile: cards. Tailwind ke hidden/block se switch hota hai */}
           <div className="hidden md:block">
             <ProductTable products={products} onDelete={setDeleteTarget} />
           </div>
@@ -219,5 +198,13 @@ export default function ProductsPage() {
         loading={deleting}
       />
     </div>
+  );
+}
+
+export default function ProductsPage() {
+  return (
+    <Suspense fallback={<Loader />}>
+      <ProductsContent />
+    </Suspense>
   );
 }

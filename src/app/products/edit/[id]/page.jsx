@@ -1,34 +1,60 @@
-# Product Admin Dashboard
+"use client";
 
-A small admin dashboard to manage products, built with Next.js, React, Tailwind CSS, and Axios, using the DummyJSON API.
+import { useEffect, useState } from "react";
+import { useParams, useRouter } from "next/navigation";
+import { getProductById, updateProduct } from "@/lib/api/products";
+import ProductForm from "@/components/ProductForm";
+import Loader from "@/components/Loader";
+import ErrorState from "@/components/ErrorState";
 
-## Setup
+export default function EditProductPage() {
+  const params = useParams();
+  const router = useRouter();
+  const [product, setProduct] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
-1. Clone this repo
-2. Install dependencies: npm install
-3. Run the development server: npm run dev
-4. Open http://localhost:3000 in your browser
-5. Login with username: emilys, password: emilyspass
+  useEffect(() => {
+    loadProduct();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params.id]);
 
-## What's completed
+  async function loadProduct() {
+    setLoading(true);
+    setError("");
+    try {
+      const data = await getProductById(params.id);
+      setProduct(data);
+    } catch (err) {
+      setError(err.message || "Failed to load product.");
+    } finally {
+      setLoading(false);
+    }
+  }
 
-- Login page with error handling and protection against duplicate submits
-- Route protection (middleware) - only logged-in users can access /products
-- Logout button
-- Product list with responsive table (desktop) / cards (mobile)
-- Pagination with page numbers, Previous/Next, page size selector (10/20/50), and Showing X-Y of Z text
-- Debounced search (waits until typing stops before calling the API)
-- Category filter and sort by price/rating/title
-- Product details page with images, description, and reviews
-- Not found page for invalid product IDs
-- Add and edit product forms with validation
-- Delete with a confirmation popup
-- Loading, empty, and error (with Retry) states
-- All page/search/filter/sort state kept in the URL
-- A single shared Axios instance with request/response interceptors
-- Race-condition-safe search (using AbortController)
-- Protection against multiple rapid submits on Login and Save buttons
+  async function handleUpdate(data) {
+    await updateProduct(params.id, data);
+    router.push(`/products/${params.id}`);
+  }
 
-## Notes
+  if (loading) return <Loader />;
+  if (error) return <ErrorState message={error} onRetry={loadProduct} />;
+  if (!product) return null;
 
-See NOTES.md for design decisions, a problem I faced, and where AI helped.
+  return (
+    <div className="max-w-2xl mx-auto p-6">
+      <h1 className="text-2xl font-semibold mb-6">Edit Product</h1>
+      <ProductForm
+        initialValues={{
+          title: product.title,
+          category: product.category,
+          price: String(product.price),
+          stock: String(product.stock),
+          description: product.description,
+        }}
+        onSubmit={handleUpdate}
+        submitLabel="Save Changes"
+      />
+    </div>
+  );
+}
